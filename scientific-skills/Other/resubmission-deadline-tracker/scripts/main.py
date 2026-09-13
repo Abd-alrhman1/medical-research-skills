@@ -17,7 +17,8 @@ import json
 import os
 import sys
 from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as datetime_timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from enum import Enum
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -28,6 +29,22 @@ DEFAULT_TIMEZONE = "Asia/Shanghai"
 DATA_DIR = Path(__file__).parent.parent / "data"
 DEADLINES_FILE = DATA_DIR / "deadlines.json"
 COMPLETED_FILE = DATA_DIR / "completed.json"
+
+
+def deadline_instant(date: str, time: str, timezone: str) -> datetime:
+    """Resolve an unambiguous wall time to UTC without using the host timezone."""
+    try:
+        zone = ZoneInfo(timezone)
+    except (ZoneInfoNotFoundError, ValueError) as exc:
+        raise ValueError(f"Unknown IANA timezone: {timezone}") from exc
+    wall_time = datetime.strptime(f"{date} {time}", "%Y-%m-%d %H:%M")
+    local = wall_time.replace(tzinfo=zone)
+    instant = local.astimezone(datetime_timezone.utc)
+    if instant.astimezone(zone).replace(tzinfo=None) != wall_time:
+        raise ValueError("Deadline falls in a daylight-saving gap; choose a valid local time.")
+    if local.utcoffset() != local.replace(fold=1).utcoffset():
+        raise ValueError("Deadline is ambiguous at a daylight-saving overlap; specify the instant in UTC.")
+    return instant
 
 
 class UrgencyLevel(Enum):
@@ -306,6 +323,7 @@ class DeadlineTracker:
         notes: str = ""
     ) -> Resubmission:
         """Add a new resubmission deadline."""
+        deadline_instant(deadline, deadline_time, timezone)
         now = datetime.now().isoformat()
         
         resubmission = Resubmission(
@@ -375,10 +393,8 @@ class DeadlineTracker:
 
     def calculate_remaining_time(self, deadline: Resubmission) -> timedelta:
         """Calculate remaining time until deadline."""
-        deadline_str = f"{deadline.deadline} {deadline.deadline_time}"
-        deadline_dt = datetime.strptime(deadline_str, "%Y-%m-%d %H:%M")
-        now = datetime.now()
-        return deadline_dt - now
+        deadline_dt = deadline_instant(deadline.deadline, deadline.deadline_time, deadline.timezone)
+        return deadline_dt - datetime.now(datetime_timezone.utc)
 
     def get_urgency_level(self, remaining: timedelta) -> UrgencyLevel:
         """Determine urgency level based on remaining time."""
@@ -550,7 +566,7 @@ class DeadlineTracker:
         print("="*80)
 
 
-def interactive_mode():
+def interactive_mode(default_timezone: str = DEFAULT_TIMEZONE):
     """Run in interactive mode."""
     tracker = DeadlineTracker()
     
@@ -575,6 +591,7 @@ def interactive_mode():
             journal = input("Journal name: ").strip()
             deadline = input("Deadline date (YYYY-MM-DD): ").strip()
             deadline_time = input("Deadline time (HH:MM, default 23:59): ").strip() or "23:59"
+            timezone = input(f"IANA timezone (default {default_timezone}): ").strip() or default_timezone
             
             try:
                 major = int(input("Number of major issues (default 0): ").strip() or "0")
@@ -590,6 +607,7 @@ def interactive_mode():
                     journal=journal,
                     deadline=deadline,
                     deadline_time=deadline_time,
+                    timezone=timezone,
                     major_issues=major,
                     minor_issues=minor,
                     notes=notes
@@ -668,6 +686,7 @@ def main():
     parser.add_argument("--journal", "-j", help="Journal name")
     parser.add_argument("--deadline", help="Deadline date (YYYY-MM-DD)")
     parser.add_argument("--time", default="23:59", help="Deadline time (HH:MM)")
+    parser.add_argument("--timezone", help=f"IANA deadline timezone (default {DEFAULT_TIMEZONE})")
     parser.add_argument("--major-issues", type=int, default=0, help="Number of major issues")
     parser.add_argument("--minor-issues", type=int, default=0, help="Number of minor issues")
     parser.add_argument("--notes", default="", help="Additional notes")
@@ -680,7 +699,7 @@ def main():
     
     # Interactive mode if no arguments
     if args.interactive or len(sys.argv) == 1:
-        interactive_mode()
+        interactive_mode(args.timezone if args.timezone is not None else DEFAULT_TIMEZONE)
         return
     
     if args.add:
@@ -688,11 +707,14 @@ def main():
             print("Error: --title, --journal, and --deadline are required for --add")
             sys.exit(1)
         
+        if args.timezone is None:
+            print(f"Deadline calculated using {DEFAULT_TIMEZONE} timezone. Use --timezone to specify your local timezone.")
         result = tracker.add_deadline(
             title=args.title,
             journal=args.journal,
             deadline=args.deadline,
             deadline_time=args.time,
+            timezone=args.timezone if args.timezone is not None else DEFAULT_TIMEZONE,
             major_issues=args.major_issues,
             minor_issues=args.minor_issues,
             notes=args.notes
@@ -740,4 +762,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(2)

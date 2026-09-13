@@ -20,8 +20,8 @@ TEXT_COLOR = "#2A2A2A"
 
 
 def slugify(text: str) -> str:
-    ascii_text = re.sub(r"[^a-zA-Z0-9\\s-]", "", text).strip().lower()
-    ascii_text = re.sub(r"\\s+", "-", ascii_text)
+    ascii_text = re.sub(r"[^a-zA-Z0-9\s-]", "", text).strip().lower()
+    ascii_text = re.sub(r"\s+", "-", ascii_text)
     return ascii_text[:30] if ascii_text else "slide"
 
 
@@ -32,7 +32,7 @@ def extract_title_and_bullets(text: str) -> tuple[str, list[str]]:
 
     for line in lines:
         if line.lower().startswith(("headline:", "title:", "#", "##")):
-            title = re.sub(r"^(headline:|title:|#+)\\s*", "", line, flags=re.I).strip()
+            title = re.sub(r"^(headline:|title:|#+)\s*", "", line, flags=re.I).strip()
             break
     else:
         title = lines[0] if lines else "Untitled"
@@ -52,7 +52,7 @@ def extract_title_and_bullets(text: str) -> tuple[str, list[str]]:
 
 def parse_outline_sections(text: str) -> list[tuple[str, list[str]]]:
     sections: list[tuple[str, list[str]]] = []
-    parts = re.split(r"^##\\s+Slide\\s+\\d+\\s+of\\s+\\d+\\s*$", text, flags=re.M)
+    parts = re.split(r"^##\s+Slide\s+\d+\s+of\s+\d+\s*$", text, flags=re.M)
     for part in parts[1:]:
         title = "Untitled"
         bullets: list[str] = []
@@ -72,7 +72,7 @@ def render_svg(title: str, bullets: list[str]) -> str:
     for item in bullets:
         bullet_lines += (
             f'<text x="160" y="{y}" font-size="{BODY_SIZE}" '
-            f'fill="{TEXT_COLOR}" font-family="{FONT_FAMILY}">• {escape_xml(item)}</text>\\n'
+            f'fill="{TEXT_COLOR}" font-family="{FONT_FAMILY}">• {escape_xml(item)}</text>\n'
         )
         y += LINE_HEIGHT
 

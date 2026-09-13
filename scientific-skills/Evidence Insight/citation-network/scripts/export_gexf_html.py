@@ -99,7 +99,8 @@ def build_payload(graph) -> dict:
 
 
 def render_html(payload: dict) -> str:
-    payload_json = json.dumps(payload, ensure_ascii=False)
+    # A JSON string must not be able to terminate its containing script element.
+    payload_json = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c")
     return f"""<!doctype html>
 <html lang="en">
 <head>

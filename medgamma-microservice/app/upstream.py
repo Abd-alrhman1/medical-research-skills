@@ -47,14 +47,12 @@ class MedGammaUpstream:
         self._max_tokens = max_tokens
         self._timeout_seconds = timeout_seconds
         self._temperature = 0.0  # pinned — clinical determinism
-        self._session = None
+        self._http = None
 
-    def _session(self):
-        import requests
-
-        if self._session is None:
-            self._session = requests.Session()
-        return self._session
+    def _client(self):
+        if self._http is None:
+            self._http = requests.Session()
+        return self._http
 
     @property
     def base_url(self) -> str:
@@ -76,7 +74,7 @@ class MedGammaUpstream:
 
         started = time.perf_counter()
         try:
-            response = self._session().post(
+            response = self._client().post(
                 f"{self.base_url}/openai/v1/chat/completions",
                 json=payload,
                 headers={
@@ -112,7 +110,7 @@ class MedGammaUpstream:
         if not self._api_key or not self._endpoint_id:
             return False
         try:
-            response = self._session().get(
+            response = self._client().get(
                 f"{self.base_url}/health",
                 headers={"Authorization": f"Bearer {self._api_key}"},
                 timeout=15,
